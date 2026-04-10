@@ -8,134 +8,154 @@ const axios = require('axios');
 //
 //  Setup:
 //    1. Install Ollama:  https://ollama.com/download
-//    2. Pull model:      ollama pull gemma3:4b
+//    2. Pull model:      ollama pull gemma4
 //    3. Ollama auto-starts its server on :11434
 // ────────────────────────────────────────────────────────────
 
 const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || 'http://localhost:11434';
-const OLLAMA_MODEL    = process.env.OLLAMA_MODEL || 'gemma3:4b';
+const OLLAMA_MODEL_ENV = process.env.OLLAMA_MODEL || 'gemma4';
+
+/**
+ * ── Resolve the exact model name installed in Ollama ──
+ * Ollama may register "gemma4" as "gemma4:latest".
+ * We fetch the tag list and fuzzy-match the configured model.
+ */
+async function resolveModelName() {
+  try {
+    const res = await axios.get(`${OLLAMA_BASE_URL}/api/tags`, { timeout: 5000 });
+    const models = (res.data.models || []).map(m => m.name);
+    if (models.length === 0) return null; // nothing installed yet
+
+    // Exact match first
+    if (models.includes(OLLAMA_MODEL_ENV)) return OLLAMA_MODEL_ENV;
+    // Prefix match (e.g. env="gemma4" → installed="gemma4:latest")
+    const prefix = models.find(m => m.startsWith(OLLAMA_MODEL_ENV.split(':')[0]));
+    if (prefix) return prefix;
+
+    return null; // model not found
+  } catch (_) {
+    return null;
+  }
+}
 
 /**
  * Build a structured prompt from employee data.
- * The prompt is designed to elicit a JSON-parseable response
- * with risk level, key insights, and recommendations.
  */
 function buildPrompt(employee) {
-  const recentLogs = (employee.activityLogs || []).slice(-7); // last 7 days
+  const recentLogs = (employee.activityLogs || []).slice(-7);
 
   const avgHours = recentLogs.length > 0
     ? (recentLogs.reduce((sum, l) => sum + l.hoursWorked, 0) / recentLogs.length).toFixed(1)
     : 'N/A';
-
   const avgTasks = recentLogs.length > 0
     ? (recentLogs.reduce((sum, l) => sum + l.tasksCompleted, 0) / recentLogs.length).toFixed(1)
     : 'N/A';
-
   const avgSentiment = recentLogs.length > 0
     ? (recentLogs.reduce((sum, l) => sum + (l.sentimentScore || 70), 0) / recentLogs.length).toFixed(0)
     : 'N/A';
 
-  return `You are an expert HR analytics AI. Analyze this employee's data and detect burnout risk.
+  return `You are an expert HR analytics AI. Analyze this employee data and detect burnout risk.
 
 EMPLOYEE PROFILE:
 - Name: ${employee.name}
 - Department: ${employee.department}
 - Role: ${employee.role || 'N/A'}
-- Current Productivity Score: ${employee.productivityScore}/100
-- Current Workload: ${employee.workload}% of capacity
-- Current Burnout Risk Flag: ${employee.burnoutRisk}
+- Productivity Score: ${employee.productivityScore}/100
+- Workload: ${employee.workload}% of capacity
+- Burnout Risk Flag: ${employee.burnoutRisk}
 - Sentiment Score: ${employee.sentimentScore}/100
-- Status: ${employee.status}
 
 RECENT ACTIVITY (Last 7 Days):
 - Average Hours Worked/Day: ${avgHours}
 - Average Tasks Completed/Day: ${avgTasks}
 - Average Sentiment Score: ${avgSentiment}/100
-${recentLogs.map(l => `  • ${new Date(l.date).toLocaleDateString()}: ${l.hoursWorked}h worked, ${l.tasksCompleted} tasks, sentiment ${l.sentimentScore || 'N/A'}`).join('\n')}
+${recentLogs.map(l => `  - ${new Date(l.date).toLocaleDateString()}: ${l.hoursWorked}h, ${l.tasksCompleted} tasks, sentiment ${l.sentimentScore || 'N/A'}`).join('\n')}
 
-BURNOUT INDICATORS TO EVALUATE:
-1. Consistently working > 9 hours/day
-2. Weekend/overtime patterns
-3. Declining task completion despite long hours
-4. Low or declining sentiment scores
-5. Workload exceeding 100% capacity
-
-Respond in this exact JSON format (no markdown, no code blocks):
+Respond ONLY in this exact JSON format (no extra text, no markdown):
 {
-  "riskLevel": "Low" | "Medium" | "High",
-  "keyInsights": ["insight1", "insight2", "insight3"],
-  "recommendations": ["recommendation1", "recommendation2", "recommendation3"]
+  "riskLevel": "Low",
+  "keyInsights": ["insight1", "insight2"],
+  "recommendations": ["rec1", "rec2"]
 }`;
 }
 
 /**
- * Call Ollama's /api/generate endpoint with the constructed prompt.
- * Returns parsed AI insights or a fallback if Ollama is unavailable.
+ * Call Ollama /api/generate with the built prompt.
+ * Auto-detects the correct installed model name.
  */
 async function generateInsights(employee) {
-  const prompt = buildPrompt(employee);
+  const model = await resolveModelName();
+
+  if (!model) {
+    console.warn(`⚠️  [AI] No model installed in Ollama yet. Using rule-based fallback for ${employee.name}.`);
+    console.warn(`⚠️  [AI] Run: ollama pull gemma4   (then restart backend)`);
+    return generateFallbackInsights(employee);
+  }
+
+  console.log(`🤖 [AI] Generating insights for: ${employee.name} using model: ${model}`);
 
   try {
     const response = await axios.post(
       `${OLLAMA_BASE_URL}/api/generate`,
       {
-        model: OLLAMA_MODEL,
-        prompt,
-        stream: false,                // wait for full response
+        model,               // ← uses the resolved, installed model name
+        prompt: buildPrompt(employee),
+        stream: false,       // must be false — we want a single complete response
         options: {
-          temperature: 0.3,           // low temp for consistency
-          num_predict: 500,            // keep response concise
+          temperature: 0.3,
+          num_predict: 400,
         },
       },
-      {
-        timeout: 60000,               // 60s timeout — local models can be slow
-      }
+      { timeout: 90000 }    // 90s timeout — first run may be slow (model loading)
     );
 
-    const rawText = response.data.response || '';
-    console.log(`🤖 AI raw response for ${employee.name}:`, rawText.substring(0, 200));
+    // ── Critical: response lives at response.data.response ──
+    const rawText = response.data?.response;
 
-    // Attempt to parse JSON from the response
+    if (!rawText) {
+      console.error('[AI] Empty response from Ollama. response.data:', JSON.stringify(response.data).substring(0, 300));
+      return generateFallbackInsights(employee);
+    }
+
+    console.log(`✅ [AI] Raw response for ${employee.name}:`, rawText.substring(0, 200));
     const parsed = parseAIResponse(rawText);
-    return {
-      ...parsed,
-      rawResponse: rawText,
-      generatedAt: new Date(),
-    };
-  } catch (error) {
-    console.error(`⚠️  Ollama AI call failed: ${error.message}`);
+    return { ...parsed, rawResponse: rawText, generatedAt: new Date(), source: 'gemma-ai' };
 
-    // ── Fallback: rule-based analysis when AI is unavailable ──
+  } catch (error) {
+    // Print full error for debugging
+    const detail = error.response?.data
+      ? JSON.stringify(error.response.data).substring(0, 300)
+      : error.message;
+    console.error(`❌ [AI] Ollama request failed: ${detail}`);
     return generateFallbackInsights(employee);
   }
 }
 
 /**
- * Parse the AI's JSON response, handling common formatting issues.
+ * Parse the AI JSON response, stripping any markdown wrappers.
  */
 function parseAIResponse(text) {
   try {
-    // Try to extract JSON from the response (model may wrap in markdown)
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    // Strip markdown code fences like ```json ... ```
+    const stripped = text.replace(/```json?\n?/gi, '').replace(/```/g, '').trim();
+    // Extract first JSON object
+    const jsonMatch = stripped.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       const parsed = JSON.parse(jsonMatch[0]);
       return {
-        riskLevel:       parsed.riskLevel || 'Medium',
+        riskLevel:       ['Low', 'Medium', 'High'].includes(parsed.riskLevel) ? parsed.riskLevel : 'Medium',
         keyInsights:     Array.isArray(parsed.keyInsights) ? parsed.keyInsights : [],
         recommendations: Array.isArray(parsed.recommendations) ? parsed.recommendations : [],
       };
     }
   } catch (e) {
-    console.warn('⚠️  Failed to parse AI JSON, using fallback:', e.message);
+    console.warn('[AI] JSON parse failed, using fallback:', e.message);
   }
-
-  // If parsing fails, return a default
-  return generateFallbackInsights({ productivityScore: 75, workload: 80, sentimentScore: 70, activityLogs: [] });
+  return { riskLevel: 'Medium', keyInsights: [], recommendations: [] };
 }
 
 /**
  * Rule-based fallback when Ollama/Gemma is unavailable.
- * Uses simple threshold logic to classify burnout risk.
  */
 function generateFallbackInsights(employee) {
   const logs = (employee.activityLogs || []).slice(-7);
@@ -149,65 +169,67 @@ function generateFallbackInsights(employee) {
   const keyInsights = [];
   const recommendations = [];
 
-  // ── Classification logic ──
   if (avgHours > 10 || sentiment < 40 || workload > 120) {
     riskLevel = 'High';
-    keyInsights.push('Employee shows critical burnout indicators');
+    keyInsights.push('Employee shows critical burnout indicators requiring immediate attention');
     if (avgHours > 10) keyInsights.push(`Averaging ${avgHours.toFixed(1)} hours/day — significantly above healthy threshold`);
     if (sentiment < 40) keyInsights.push(`Sentiment score (${sentiment}) is critically low`);
-    recommendations.push('Schedule an immediate 1-on-1 check-in');
-    recommendations.push('Redistribute workload to reduce capacity below 100%');
+    if (workload > 120) keyInsights.push(`Workload at ${workload}% — well above safe capacity`);
+    recommendations.push('Schedule an immediate 1-on-1 check-in this week');
+    recommendations.push('Redistribute workload to bring capacity below 100%');
     recommendations.push('Approve any pending leave requests');
   } else if (avgHours > 9 || sentiment < 55 || workload > 100) {
     riskLevel = 'Medium';
     keyInsights.push('Employee shows moderate burnout risk signals');
-    if (avgHours > 9) keyInsights.push(`Averaging ${avgHours.toFixed(1)} hours/day — above healthy threshold`);
-    recommendations.push('Monitor workload closely this sprint');
-    recommendations.push('Consider implementing no-meeting days');
+    if (avgHours > 9) keyInsights.push(`Averaging ${avgHours.toFixed(1)} hours/day — slightly above healthy threshold`);
+    if (workload > 100) keyInsights.push(`Workload at ${workload}% — monitor closely`);
+    recommendations.push('Monitor workload trends closely this sprint');
+    recommendations.push('Consider implementing no-meeting days to restore focus time');
+    recommendations.push('Check in informally every 2 weeks');
   } else {
     keyInsights.push('Employee appears to have a healthy work-life balance');
     keyInsights.push(`Productivity score of ${employee.productivityScore || 75} is within healthy range`);
+    keyInsights.push(`Sentiment score of ${sentiment} indicates positive engagement`);
     recommendations.push('Continue current workload distribution');
-    recommendations.push('Consider recognizing achievements to maintain morale');
+    recommendations.push('Consider recognizing recent achievements to maintain morale');
+    recommendations.push('Ensure regular career development conversations continue');
   }
 
   return {
     riskLevel,
     keyInsights,
     recommendations,
-    rawResponse: 'Fallback: rule-based analysis (Ollama unavailable)',
+    rawResponse: `[Fallback] Rule-based analysis. Gemma AI not yet available — model still downloading.`,
     generatedAt: new Date(),
+    source: 'rule-based-fallback',
   };
 }
 
 /**
- * Check if Ollama is running and the model is available.
+ * Check Ollama health + model availability.
  */
 async function checkOllamaStatus() {
   try {
-    const response = await axios.get(`${OLLAMA_BASE_URL}/api/tags`, { timeout: 5000 });
-    const models = response.data.models || [];
-    const hasModel = models.some(m => m.name.includes(OLLAMA_MODEL.split(':')[0]));
+    const res = await axios.get(`${OLLAMA_BASE_URL}/api/tags`, { timeout: 5000 });
+    const models = res.data.models || [];
+    const resolvedModel = await resolveModelName();
     return {
-      running: true,
-      modelAvailable: hasModel,
-      models: models.map(m => m.name),
-      baseUrl: OLLAMA_BASE_URL,
-      configuredModel: OLLAMA_MODEL,
+      running:        true,
+      modelAvailable: !!resolvedModel,
+      resolvedModel,
+      configuredModel: OLLAMA_MODEL_ENV,
+      models:         models.map(m => m.name),
+      baseUrl:        OLLAMA_BASE_URL,
     };
   } catch (error) {
     return {
-      running: false,
+      running:        false,
       modelAvailable: false,
-      error: error.message,
-      baseUrl: OLLAMA_BASE_URL,
-      configuredModel: OLLAMA_MODEL,
+      error:          error.message,
+      configuredModel: OLLAMA_MODEL_ENV,
+      baseUrl:        OLLAMA_BASE_URL,
     };
   }
 }
 
-module.exports = {
-  generateInsights,
-  checkOllamaStatus,
-  generateFallbackInsights,
-};
+module.exports = { generateInsights, checkOllamaStatus, generateFallbackInsights };

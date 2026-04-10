@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 
 const engagementLogSchema = new mongoose.Schema({
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'Employee', required: true },
+  userId: { type: String, required: true },  // String to support both ObjectId and demo IDs
   meetingId: { type: String, required: true },
   
   // Scoring

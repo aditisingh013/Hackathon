@@ -3,13 +3,16 @@ import { motion } from 'framer-motion';
 
 /*
  * KpiCard — Apple-clean metric card.
- * Design decisions:
- *   – No borders — relies on shadow-soft for depth
- *   – Large number with small label underneath
- *   – Subtle hover scale (1.02) for interactivity
- *   – Change indicator in muted green/red
+ * change prop accepts: string, number, or { val, time } object.
  */
 export default function KpiCard({ title, value, change, positive, icon }) {
+  // Safely format change regardless of whether it's a string or {val, time} object
+  const changeLabel = change
+    ? typeof change === 'object'
+      ? `${positive ? '+' : '-'}${change.val}% / ${change.time}`
+      : change
+    : null;
+
   return (
     <motion.div
       whileHover={{ scale: 1.02, y: -2 }}
@@ -30,9 +33,9 @@ export default function KpiCard({ title, value, change, positive, icon }) {
           <p className="text-sm text-textSecondary dark:text-gray-500">
             {title}
           </p>
-          {change && (
+          {changeLabel && (
             <span className={`text-xs font-medium ${positive ? 'text-apple-green' : 'text-apple-red'}`}>
-              {change}
+              {changeLabel}
             </span>
           )}
         </div>
