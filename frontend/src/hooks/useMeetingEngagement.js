@@ -2,9 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 
 // The ID's are static for demo purposes. In a real app, these come from auth/routing.
 const MEETING_ID = "DEMO_MEETING_123";
-// We default to our first inserted employee or a dummy string if not ready
 const USER_ID = "60d0fe4f5311236168a109ca"; 
-const API_BASE = "http://localhost:5002/api/engagement";
+const API_BASE = "http://localhost:5000/api/engagement";
 
 export default function useMeetingEngagement() {
   const [engagementData, setEngagementData] = useState(null);

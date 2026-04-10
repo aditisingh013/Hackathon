@@ -21,7 +21,8 @@ async function seed() {
       await mongoose.connect(atlasUri, { serverSelectionTimeoutMS: 5000 });
       console.log('✅ Connected to MongoDB Atlas');
     } catch (e) {
-      console.log('⚠️ Atlas Whitelist blocked access. Using Local MongoDB.');
+      console.log('⚠️ Atlas Connection Failed. Error:', e.message);
+      console.log('⚠️ Attempting to fallback to Local MongoDB...');
       await mongoose.connect(localUri);
       console.log('✅ Connected to Local MongoDB');
     }
