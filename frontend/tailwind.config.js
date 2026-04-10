@@ -4,34 +4,54 @@ export default {
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
-  darkMode: 'class', // Enable dark mode toggling via class name
+  darkMode: 'class',
   theme: {
     extend: {
+      /* ── Apple-inspired color palette ── */
       colors: {
-        primary: {
-          50: '#eff6ff',
-          100: '#dbeafe',
-          200: '#bfdbfe',
-          300: '#93c5fd',
-          400: '#60a5fa',
-          500: '#3b82f6',
-          600: '#2563eb',
-          700: '#1d4ed8',
-          800: '#1e40af',
-          900: '#1e3a8a',
-          950: '#172554',
+        apple: {
+          blue:   '#007aff',
+          green:  '#34c759',
+          orange: '#ff9500',
+          red:    '#ff3b30',
+          purple: '#af52de',
+          gray:   '#8e8e93',
         },
-        background: '#f8fafc',
-        glass: 'rgba(255, 255, 255, 0.7)',
-        glassdark: 'rgba(15, 23, 42, 0.7)',
+        surface:      '#ffffff',
+        surfaceAlt:   '#f5f5f7',
+        surfaceDark:  '#000000',
+        surfaceDarkAlt: '#1c1c1e',
+        textPrimary:    '#1d1d1f',
+        textSecondary:  '#86868b',
       },
+      /* ── Typography — mimic SF Pro via system stack ── */
       fontFamily: {
-        sans: ['Inter', 'sans-serif'],
+        sans: [
+          '-apple-system', 'BlinkMacSystemFont', '"SF Pro Display"',
+          '"SF Pro Text"', '"Helvetica Neue"', 'Arial', 'sans-serif',
+        ],
       },
+      /* ── Subtle, premium shadows ── */
       boxShadow: {
-        'soft': '0 4px 20px -2px rgba(0, 0, 0, 0.05)',
-        'glass': '0 8px 32px 0 rgba(31, 38, 135, 0.07)',
-      }
+        'soft':    '0 2px 16px rgba(0,0,0,0.04)',
+        'card':    '0 4px 24px rgba(0,0,0,0.06)',
+        'cardHover': '0 8px 40px rgba(0,0,0,0.10)',
+        'modal':   '0 24px 80px rgba(0,0,0,0.18)',
+      },
+      /* ── Consistent easing ── */
+      transitionTimingFunction: {
+        'apple': 'cubic-bezier(0.25, 0.1, 0.25, 1)',
+      },
+      /* ── Keyframes for fade-up on scroll ── */
+      keyframes: {
+        fadeUp: {
+          '0%':   { opacity: '0', transform: 'translateY(24px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+      },
+      animation: {
+        'fade-up': 'fadeUp 0.6s cubic-bezier(0.25,0.1,0.25,1) forwards',
+      },
     },
   },
   plugins: [],

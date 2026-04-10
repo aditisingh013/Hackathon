@@ -1,26 +1,42 @@
 import React from 'react';
+import { motion } from 'framer-motion';
 
-export default function KpiCard({ title, value, change, icon, isPositiveChange }) {
+/*
+ * KpiCard — Apple-clean metric card.
+ * Design decisions:
+ *   – No borders — relies on shadow-soft for depth
+ *   – Large number with small label underneath
+ *   – Subtle hover scale (1.02) for interactivity
+ *   – Change indicator in muted green/red
+ */
+export default function KpiCard({ title, value, change, positive, icon }) {
   return (
-    <div className="glass-panel p-5 flex flex-col hover:shadow-lg transition-shadow duration-300">
-      <div className="flex justify-between items-start mb-4">
-        <div className="p-3 bg-primary-50 dark:bg-slate-800 rounded-xl text-primary-600 dark:text-primary-400">
-          {icon}
-        </div>
-        {change && (
-          <span className={`text-sm font-semibold px-2 py-1 rounded-full ${
-            isPositiveChange === false 
-              ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' 
-              : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400'
-          }`}>
-            {change}
-          </span>
-        )}
+    <motion.div
+      whileHover={{ scale: 1.02, y: -2 }}
+      transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
+      className="bg-white dark:bg-surfaceDarkAlt rounded-2xl shadow-soft p-6 flex flex-col gap-4 cursor-default"
+    >
+      {/* Icon */}
+      <div className="w-10 h-10 rounded-xl bg-surfaceAlt dark:bg-white/5 flex items-center justify-center text-apple-blue">
+        {icon}
       </div>
+
+      {/* Value */}
       <div>
-        <h3 className="text-3xl font-bold text-slate-800 dark:text-slate-100">{value}</h3>
-        <p className="text-sm font-medium text-slate-500 dark:text-slate-400 mt-1">{title}</p>
+        <p className="text-3xl font-bold tracking-tight text-textPrimary dark:text-white">
+          {value}
+        </p>
+        <div className="flex items-center gap-2 mt-1">
+          <p className="text-sm text-textSecondary dark:text-gray-500">
+            {title}
+          </p>
+          {change && (
+            <span className={`text-xs font-medium ${positive ? 'text-apple-green' : 'text-apple-red'}`}>
+              {change}
+            </span>
+          )}
+        </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
